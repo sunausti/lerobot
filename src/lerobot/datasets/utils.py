@@ -17,7 +17,8 @@ import contextlib
 import importlib.resources
 import json
 import logging
-from collections.abc import Iterator
+from collections import deque
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from pprint import pformat
 from types import SimpleNamespace
