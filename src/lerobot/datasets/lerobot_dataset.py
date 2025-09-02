@@ -53,7 +53,6 @@ from lerobot.datasets.utils import (
     get_parquet_file_size_in_mb,
     get_parquet_num_frames,
     get_safe_version,
-    get_video_duration_in_s,
     get_video_size_in_mb,
     hf_transform_to_torch,
     is_valid_version,
@@ -77,6 +76,7 @@ from lerobot.datasets.video_utils import (
     decode_video_frames,
     encode_video_frames,
     get_safe_default_codec,
+    get_video_duration_in_s,
     get_video_info,
 )
 
@@ -104,9 +104,6 @@ class LeRobotDatasetMetadata:
                 self.revision = get_safe_version(self.repo_id, self.revision)
 
             (self.root / "meta").mkdir(exist_ok=True, parents=True)
-            # TODO(rcadene): instead of downloading all episodes metadata files,
-            # download only the ones associated to the requested episodes. This would
-            # require adding `episodes: list[int]` as argument.
             self.pull_from_repo(allow_patterns="meta/")
             self.load_metadata()
 
@@ -362,6 +359,53 @@ class LeRobotDatasetMetadata:
                 video_path = self.root / self.get_video_file_path(ep_index=0, vid_key=key)
                 self.info["features"][key]["info"] = get_video_info(video_path)
 
+    def update_chunk_settings(
+        self,
+        chunks_size: int | None = None,
+        data_files_size_in_mb: int | None = None,
+        video_files_size_in_mb: int | None = None,
+    ) -> None:
+        """Update chunk and file size settings after dataset creation.
+
+        This allows users to customize storage organization without modifying the constructor.
+        These settings control how episodes are chunked and how large files can grow before
+        creating new ones.
+
+        Args:
+            chunks_size: Maximum number of files per chunk directory. If None, keeps current value.
+            data_files_size_in_mb: Maximum size for data parquet files in MB. If None, keeps current value.
+            video_files_size_in_mb: Maximum size for video files in MB. If None, keeps current value.
+        """
+        if chunks_size is not None:
+            if chunks_size <= 0:
+                raise ValueError(f"chunks_size must be positive, got {chunks_size}")
+            self.info["chunks_size"] = chunks_size
+
+        if data_files_size_in_mb is not None:
+            if data_files_size_in_mb <= 0:
+                raise ValueError(f"data_files_size_in_mb must be positive, got {data_files_size_in_mb}")
+            self.info["data_files_size_in_mb"] = data_files_size_in_mb
+
+        if video_files_size_in_mb is not None:
+            if video_files_size_in_mb <= 0:
+                raise ValueError(f"video_files_size_in_mb must be positive, got {video_files_size_in_mb}")
+            self.info["video_files_size_in_mb"] = video_files_size_in_mb
+
+        # Update the info file on disk
+        write_info(self.info, self.root)
+
+    def get_chunk_settings(self) -> dict[str, int]:
+        """Get current chunk and file size settings.
+
+        Returns:
+            Dict containing chunks_size, data_files_size_in_mb, and video_files_size_in_mb.
+        """
+        return {
+            "chunks_size": self.chunks_size,
+            "data_files_size_in_mb": self.data_files_size_in_mb,
+            "video_files_size_in_mb": self.video_files_size_in_mb,
+        }
+
     def __repr__(self):
         feature_keys = list(self.features)
         return (
@@ -430,9 +474,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
             - On the Hugging Face Hub at the address https://huggingface.co/datasets/{repo_id} and not on
               your local disk in the 'root' folder. Instantiating this class with this 'repo_id' will download
               the dataset from that address and load it, pending your dataset is compliant with
-              codebase_version v2.0. If your dataset has been created before this new format, you will be
-              prompted to convert it using our conversion script from v1.6 to v2.0, which you can find at
-              lerobot/datasets/v2/convert_dataset_v1_to_v2.py.
+              codebase_version v3.0. If your dataset has been created before this new format, you will be
+              prompted to convert it using our conversion script from v2.1 to v3.0, which you can find at
+              lerobot/datasets/v30/convert_dataset_v21_to_v30.py.
 
 
         2. Your dataset doesn't already exists (either on local disk or on the Hub): you can create an empty
@@ -453,38 +497,47 @@ class LeRobotDataset(torch.utils.data.Dataset):
         .
         ├── data
         │   ├── chunk-000
-        │   │   ├── episode_000000.parquet
-        │   │   ├── episode_000001.parquet
-        │   │   ├── episode_000002.parquet
+        │   │   ├── file-000.parquet
+        │   │   ├── file-001.parquet
         │   │   └── ...
         │   ├── chunk-001
-        │   │   ├── episode_001000.parquet
-        │   │   ├── episode_001001.parquet
-        │   │   ├── episode_001002.parquet
+        │   │   ├── file-000.parquet
+        │   │   ├── file-001.parquet
         │   │   └── ...
         │   └── ...
         ├── meta
-        │   ├── episodes.jsonl
+        │   ├── episodes
+        │   │   ├── chunk-000
+        │   │   │   ├── file-000.parquet
+        │   │   │   ├── file-001.parquet
+        │   │   │   └── ...
+        │   │   ├── chunk-001
+        │   │   │   └── ...
+        │   │   └── ...
         │   ├── info.json
         │   ├── stats.json
-        │   └── tasks.jsonl
+        │   └── tasks.parquet
         └── videos
-            ├── chunk-000
-            │   ├── observation.images.laptop
-            │   │   ├── episode_000000.mp4
-            │   │   ├── episode_000001.mp4
-            │   │   ├── episode_000002.mp4
+            ├── observation.images.laptop
+            │   ├── chunk-000
+            │   │   ├── file-000.mp4
+            │   │   ├── file-001.mp4
             │   │   └── ...
-            │   ├── observation.images.phone
-            │   │   ├── episode_000000.mp4
-            │   │   ├── episode_000001.mp4
-            │   │   ├── episode_000002.mp4
+            │   ├── chunk-001
             │   │   └── ...
-            ├── chunk-001
+            │   └── ...
+            ├── observation.images.phone
+            │   ├── chunk-000
+            │   │   ├── file-000.mp4
+            │   │   ├── file-001.mp4
+            │   │   └── ...
+            │   ├── chunk-001
+            │   │   └── ...
+            │   └── ...
             └── ...
 
-        Note that this file-based structure is designed to be as versatile as possible. The files are split by
-        episodes which allows a more granular control over which episodes one wants to use and download. The
+        Note that this file-based structure is designed to be as versatile as possible. Multiple episodes are
+        consolidated into chunked files which improves storage efficiency and loading performance. The
         structure of the dataset is entirely described in the info.json file, which can be easily downloaded
         or viewed directly on the hub before downloading any actual data. The type of files used are very
         simple and do not need complex tools to be read, it only uses .parquet, .json and .mp4 files (and .md
@@ -509,7 +562,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
                 multiples of 1/fps. Defaults to 1e-4.
             revision (str, optional): An optional Git revision id which can be a branch name, a tag, or a
                 commit hash. Defaults to current codebase version tag.
-            sync_cache_first (bool, optional): Flag to sync and refresh local files first. If True and files
+            force_cache_sync (bool, optional): Flag to sync and refresh local files first. If True and files
                 are already present in the local cache, this will be faster. However, files loaded might not
                 be in sync with the version on the hub, especially if you specified 'revision'. Defaults to
                 False.
@@ -546,6 +599,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
             if force_cache_sync:
                 raise FileNotFoundError
             self.hf_dataset = self.load_hf_dataset()
+            # Check if cached dataset contains all requested episodes
+            if not self._check_cached_episodes_sufficient():
+                raise FileNotFoundError("Cached dataset doesn't contain all requested episodes")
         except (AssertionError, FileNotFoundError, NotADirectoryError):
             self.revision = get_safe_version(self.repo_id, self.revision)
             self.download(download_videos)
@@ -660,6 +716,28 @@ class LeRobotDataset(torch.utils.data.Dataset):
         hf_dataset = load_nested_dataset(self.root / "data", features=features)
         hf_dataset.set_transform(hf_transform_to_torch)
         return hf_dataset
+
+    def _check_cached_episodes_sufficient(self) -> bool:
+        """Check if the cached dataset contains all requested episodes."""
+        if self.hf_dataset is None or len(self.hf_dataset) == 0:
+            return False
+
+        # Get available episode indices from cached dataset
+        available_episodes = {
+            ep_idx.item() if isinstance(ep_idx, torch.Tensor) else ep_idx
+            for ep_idx in self.hf_dataset["episode_index"]
+        }
+
+        # Determine requested episodes
+        if self.episodes is None:
+            # Requesting all episodes - check if we have all episodes from metadata
+            requested_episodes = set(range(self.meta.total_episodes))
+        else:
+            # Requesting specific episodes
+            requested_episodes = set(self.episodes)
+
+        # Check if all requested episodes are available in cached data
+        return requested_episodes.issubset(available_episodes)
 
     def create_hf_dataset(self) -> datasets.Dataset:
         features = get_hf_features_from_features(self.features)

@@ -40,8 +40,9 @@ from typing import Any
 
 import jsonlines
 import pandas as pd
+import pyarrow as pa
 import tqdm
-from datasets import Dataset, Image, concatenate_datasets
+from datasets import Dataset, Features, Image
 from huggingface_hub import HfApi, snapshot_download
 from requests import HTTPError
 
@@ -61,7 +62,6 @@ from lerobot.datasets.utils import (
     flatten_dict,
     get_parquet_file_size_in_mb,
     get_parquet_num_frames,
-    get_video_duration_in_s,
     get_video_size_in_mb,
     load_info,
     update_chunk_file_indices,
@@ -70,7 +70,7 @@ from lerobot.datasets.utils import (
     write_stats,
     write_tasks,
 )
-from lerobot.datasets.video_utils import concat_video_files
+from lerobot.datasets.video_utils import concat_video_files, get_video_duration_in_s
 
 V21 = "v2.1"
 
@@ -152,24 +152,27 @@ def convert_tasks(root, new_root):
 
 
 def concat_data_files(paths_to_cat, new_root, chunk_idx, file_idx, image_keys):
-    # Save RAM by using Dataset.from_parquet and concatenate_datasets
-    datasets = [Dataset.from_parquet(file) for file in paths_to_cat]
-    concatenated_dataset = concatenate_datasets(datasets)
+    # TODO(rcadene): to save RAM use Dataset.from_parquet(file) and concatenate_datasets
+    dataframes = [pd.read_parquet(file) for file in paths_to_cat]
+    # Concatenate all DataFrames along rows
+    concatenated_df = pd.concat(dataframes, ignore_index=True)
 
     path = new_root / DEFAULT_DATA_PATH.format(chunk_index=chunk_idx, file_index=file_idx)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     if len(image_keys) > 0:
-        # Handle image features by casting to the appropriate feature types
-        features = concatenated_dataset.features.copy()
+        schema = pa.Schema.from_pandas(concatenated_df)
+        features = Features.from_arrow_schema(schema)
         for key in image_keys:
             features[key] = Image()
-        concatenated_dataset = concatenated_dataset.cast(features)
+        schema = features.arrow_schema
+    else:
+        schema = None
 
-    concatenated_dataset.to_parquet(path)
+    concatenated_df.to_parquet(path, index=False, schema=schema)
 
 
-def convert_data(root, new_root):
+def convert_data(root: Path, new_root: Path, data_file_size_in_mb: int):
     data_dir = root / "data"
     ep_paths = sorted(data_dir.glob("*/*.parquet"))
 
@@ -197,7 +200,7 @@ def convert_data(root, new_root):
         episodes_metadata.append(ep_metadata)
         ep_idx += 1
 
-        if size_in_mb < DEFAULT_DATA_FILE_SIZE_IN_MB:
+        if size_in_mb < data_file_size_in_mb:
             paths_to_cat.append(ep_path)
             continue
 
@@ -231,7 +234,7 @@ def get_image_keys(root):
     return image_keys
 
 
-def convert_videos(root: Path, new_root: Path):
+def convert_videos(root: Path, new_root: Path, video_file_size_in_mb: int):
     video_keys = get_video_keys(root)
     if len(video_keys) == 0:
         return None
@@ -240,7 +243,7 @@ def convert_videos(root: Path, new_root: Path):
 
     eps_metadata_per_cam = []
     for camera in video_keys:
-        eps_metadata = convert_videos_of_camera(root, new_root, camera)
+        eps_metadata = convert_videos_of_camera(root, new_root, camera, video_file_size_in_mb)
         eps_metadata_per_cam.append(eps_metadata)
 
     num_eps_per_cam = [len(eps_cam_map) for eps_cam_map in eps_metadata_per_cam]
@@ -265,7 +268,7 @@ def convert_videos(root: Path, new_root: Path):
     return episods_metadata
 
 
-def convert_videos_of_camera(root: Path, new_root: Path, video_key):
+def convert_videos_of_camera(root: Path, new_root: Path, video_key: str, video_file_size_in_mb: int):
     # Access old paths to mp4
     videos_dir = root / "videos"
     ep_paths = sorted(videos_dir.glob(f"*/{video_key}/*.mp4"))
@@ -280,34 +283,49 @@ def convert_videos_of_camera(root: Path, new_root: Path, video_key):
     for ep_path in tqdm.tqdm(ep_paths, desc=f"convert videos of {video_key}"):
         ep_size_in_mb = get_video_size_in_mb(ep_path)
         ep_duration_in_s = get_video_duration_in_s(ep_path)
+
+        # Check if adding this episode would exceed the limit
+        if size_in_mb + ep_size_in_mb >= video_file_size_in_mb and len(paths_to_cat) > 0:
+            # Size limit would be exceeded, save current accumulation WITHOUT this episode
+            concat_video_files(paths_to_cat, new_root, video_key, chunk_idx, file_idx)
+
+            # Update episodes metadata for the file we just saved
+            for i, _ in enumerate(paths_to_cat):
+                past_ep_idx = ep_idx - len(paths_to_cat) + i
+                episodes_metadata[past_ep_idx][f"videos/{video_key}/chunk_index"] = chunk_idx
+                episodes_metadata[past_ep_idx][f"videos/{video_key}/file_index"] = file_idx
+
+            # Move to next file and start fresh with current episode
+            chunk_idx, file_idx = update_chunk_file_indices(chunk_idx, file_idx, DEFAULT_CHUNK_SIZE)
+            size_in_mb = 0
+            duration_in_s = 0.0
+            paths_to_cat = []
+
+        # Add current episode metadata
         ep_metadata = {
             "episode_index": ep_idx,
-            f"videos/{video_key}/chunk_index": chunk_idx,
-            f"videos/{video_key}/file_index": file_idx,
+            f"videos/{video_key}/chunk_index": chunk_idx,  # Will be updated when file is saved
+            f"videos/{video_key}/file_index": file_idx,  # Will be updated when file is saved
             f"videos/{video_key}/from_timestamp": duration_in_s,
             f"videos/{video_key}/to_timestamp": duration_in_s + ep_duration_in_s,
         }
+        episodes_metadata.append(ep_metadata)
+
+        # Add current episode to accumulation
+        paths_to_cat.append(ep_path)
         size_in_mb += ep_size_in_mb
         duration_in_s += ep_duration_in_s
-        episodes_metadata.append(ep_metadata)
         ep_idx += 1
-
-        if size_in_mb < DEFAULT_VIDEO_FILE_SIZE_IN_MB:
-            paths_to_cat.append(ep_path)
-            continue
-
-        concat_video_files(paths_to_cat, new_root, video_key, chunk_idx, file_idx)
-
-        # Reset for the next file
-        size_in_mb = ep_size_in_mb
-        duration_in_s = ep_duration_in_s
-        paths_to_cat = [ep_path]
-
-        chunk_idx, file_idx = update_chunk_file_indices(chunk_idx, file_idx, DEFAULT_CHUNK_SIZE)
 
     # Write remaining videos if any
     if paths_to_cat:
         concat_video_files(paths_to_cat, new_root, video_key, chunk_idx, file_idx)
+
+        # Update episodes metadata for the final file
+        for i, _ in enumerate(paths_to_cat):
+            past_ep_idx = ep_idx - len(paths_to_cat) + i
+            episodes_metadata[past_ep_idx][f"videos/{video_key}/chunk_index"] = chunk_idx
+            episodes_metadata[past_ep_idx][f"videos/{video_key}/file_index"] = file_idx
 
     return episodes_metadata
 
@@ -368,13 +386,13 @@ def convert_episodes_metadata(root, new_root, episodes_metadata, episodes_video_
     write_stats(stats, new_root)
 
 
-def convert_info(root, new_root):
+def convert_info(root, new_root, data_file_size_in_mb, video_file_size_in_mb):
     info = load_info(root)
     info["codebase_version"] = "v3.0"
     del info["total_chunks"]
     del info["total_videos"]
-    info["data_files_size_in_mb"] = DEFAULT_DATA_FILE_SIZE_IN_MB
-    info["video_files_size_in_mb"] = DEFAULT_VIDEO_FILE_SIZE_IN_MB
+    info["data_files_size_in_mb"] = data_file_size_in_mb
+    info["video_files_size_in_mb"] = video_file_size_in_mb
     info["data_path"] = DEFAULT_DATA_PATH
     info["video_path"] = DEFAULT_VIDEO_PATH
     info["fps"] = float(info["fps"])
@@ -389,11 +407,17 @@ def convert_info(root, new_root):
 def convert_dataset(
     repo_id: str,
     branch: str | None = None,
-    num_workers: int = 4,
+    data_file_size_in_mb: int | None = None,
+    video_file_size_in_mb: int | None = None,
 ):
     root = HF_LEROBOT_HOME / repo_id
     old_root = HF_LEROBOT_HOME / f"{repo_id}_old"
     new_root = HF_LEROBOT_HOME / f"{repo_id}_v30"
+
+    if data_file_size_in_mb is None:
+        data_file_size_in_mb = DEFAULT_DATA_FILE_SIZE_IN_MB
+    if video_file_size_in_mb is None:
+        video_file_size_in_mb = DEFAULT_VIDEO_FILE_SIZE_IN_MB
 
     if old_root.is_dir() and root.is_dir():
         shutil.rmtree(str(root))
@@ -409,10 +433,10 @@ def convert_dataset(
         local_dir=root,
     )
 
-    convert_info(root, new_root)
+    convert_info(root, new_root, data_file_size_in_mb, video_file_size_in_mb)
     convert_tasks(root, new_root)
-    episodes_metadata = convert_data(root, new_root)
-    episodes_videos_metadata = convert_videos(root, new_root)
+    episodes_metadata = convert_data(root, new_root, data_file_size_in_mb)
+    episodes_videos_metadata = convert_videos(root, new_root, video_file_size_in_mb)
     convert_episodes_metadata(root, new_root, episodes_metadata, episodes_videos_metadata)
 
     shutil.move(str(root), str(old_root))
@@ -451,10 +475,16 @@ if __name__ == "__main__":
         help="Repo branch to push your dataset. Defaults to the main branch.",
     )
     parser.add_argument(
-        "--num-workers",
+        "--data-file-size-in-mb",
         type=int,
-        default=4,
-        help="Number of workers for parallelizing stats compute. Defaults to 4.",
+        default=None,
+        help="File size in MB. Defaults to 100 for data and 500 for videos.",
+    )
+    parser.add_argument(
+        "--video-file-size-in-mb",
+        type=int,
+        default=None,
+        help="File size in MB. Defaults to 100 for data and 500 for videos.",
     )
 
     args = parser.parse_args()
