@@ -121,6 +121,7 @@ class VanillaObservationProcessorStep(ObservationProcessorStep):
         - observation.environment_state -> OBS_ENV_STATE,
         - observation.agent_pos -> OBS_STATE
         """
+        # TODO(Steven): This will blow up
         exact_pairs = {
             "pixels": OBS_IMAGE,
             "environment_state": OBS_ENV_STATE,

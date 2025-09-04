@@ -238,10 +238,12 @@ class TokenizerProcessorStep(ObservationProcessorStep):
         # Standard tokenizer output includes tokens and attention_mask
 
         if OBS_LANGUAGE_TOKENS not in features:
-            features[OBS_LANGUAGE_TOKENS] = PolicyFeature(type=FeatureType.LANGUAGE, shape=(self.max_length,))
+            features[FeatureType.LANGUAGE][OBS_LANGUAGE_TOKENS] = PolicyFeature(
+                type=FeatureType.LANGUAGE, shape=(self.max_length,)
+            )
 
         if OBS_LANGUAGE_ATTENTION_MASK not in features:
-            features[OBS_LANGUAGE_ATTENTION_MASK] = PolicyFeature(
+            features[FeatureType.LANGUAGE][OBS_LANGUAGE_ATTENTION_MASK] = PolicyFeature(
                 type=FeatureType.LANGUAGE, shape=(self.max_length,)
             )
 

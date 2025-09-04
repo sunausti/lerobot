@@ -25,7 +25,6 @@ class JointVelocityProcessorStep(ObservationProcessorStep):
         # Get current joint positions (assuming they're in observation.state)
         current_positions = observation.get(OBS_STATE)
         if current_positions is None:
-            # TODO(steven): if we get here, then the transform_features method will not hold
             raise ValueError(f"{OBS_STATE} is not in observation")
 
         # Initialize last joint positions if not already set
@@ -58,6 +57,7 @@ class JointVelocityProcessorStep(ObservationProcessorStep):
     def transform_features(
         self, features: dict[FeatureType, dict[str, PolicyFeature]]
     ) -> dict[FeatureType, dict[str, PolicyFeature]]:
+        # TODO(Steven,Michel): This will blow up
         if OBS_STATE in features:
             original_feature = features[OBS_STATE]
             # Double the shape to account for positions + velocities
@@ -100,6 +100,7 @@ class MotorCurrentProcessorStep(ObservationProcessorStep):
     def transform_features(
         self, features: dict[FeatureType, dict[str, PolicyFeature]]
     ) -> dict[FeatureType, dict[str, PolicyFeature]]:
+        # TODO(Steven, Michel): This will blow up
         if OBS_STATE in features and self.robot is not None:
             original_feature = features[OBS_STATE]
             # Add motor current dimensions to the original state shape
