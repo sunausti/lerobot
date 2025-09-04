@@ -3,7 +3,7 @@ from typing import Any
 
 import torch
 
-from lerobot.configs.types import PolicyFeature
+from lerobot.configs.types import FeatureType, PolicyFeature
 from lerobot.constants import OBS_STATE
 from lerobot.processor.pipeline import (
     ObservationProcessorStep,
@@ -55,7 +55,9 @@ class JointVelocityProcessorStep(ObservationProcessorStep):
     def reset(self) -> None:
         self.last_joint_positions = None
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         if OBS_STATE in features:
             original_feature = features[OBS_STATE]
             # Double the shape to account for positions + velocities
@@ -95,7 +97,9 @@ class MotorCurrentProcessorStep(ObservationProcessorStep):
 
         return new_observation
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         if OBS_STATE in features and self.robot is not None:
             original_feature = features[OBS_STATE]
             # Add motor current dimensions to the original state shape

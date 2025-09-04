@@ -207,7 +207,9 @@ class NormalizerProcessorStep(_NormalizationMixin, ProcessorStep):
 
         return new_transition
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         return features
 
 
@@ -248,7 +250,9 @@ class UnnormalizerProcessorStep(_NormalizationMixin, ProcessorStep):
 
         return new_transition
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         return features
 
 

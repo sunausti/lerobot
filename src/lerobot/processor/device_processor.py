@@ -18,7 +18,7 @@ from typing import Any
 
 import torch
 
-from lerobot.configs.types import PolicyFeature
+from lerobot.configs.types import FeatureType, PolicyFeature
 from lerobot.utils.utils import get_safe_torch_device
 
 from .core import EnvTransition, TransitionKey
@@ -130,5 +130,7 @@ class DeviceProcessorStep(ProcessorStep):
         """Return configuration for serialization."""
         return {"device": self.device, "float_dtype": self.float_dtype}
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         return features

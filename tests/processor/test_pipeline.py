@@ -90,7 +90,9 @@ class MockStep:
     def reset(self) -> None:
         self.counter = 0
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         # We do not test features here
         return features
 
@@ -112,7 +114,9 @@ class MockStepWithoutOptionalMethods:
 
         return transition
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         # We do not test features here
         return features
 
@@ -168,7 +172,9 @@ class MockStepWithTensorState:
         self.running_mean.zero_()
         self.running_count.zero_()
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         # We do not test features here
         return features
 
@@ -664,7 +670,9 @@ class MockModuleStep(nn.Module):
         self.running_mean.zero_()
         self.counter = 0
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         # We do not test features here
         return features
 
@@ -746,7 +754,9 @@ class MockNonModuleStepWithState:
         self.step_count.zero_()
         self.history.clear()
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         # We do not test features here
         return features
 
@@ -801,7 +811,9 @@ class MockStepWithNonSerializableParam:
     def reset(self) -> None:
         pass
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         # We do not test features here
         return features
 
@@ -840,7 +852,9 @@ class RegisteredMockStep:
     def reset(self) -> None:
         pass
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         # We do not test features here
         return features
 
@@ -1400,7 +1414,9 @@ def test_state_file_naming_with_registry():
         def load_state_dict(self, state):
             self.state_tensor = state["state_tensor"]
 
-        def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+        def transform_features(
+            self, features: dict[FeatureType, dict[str, PolicyFeature]]
+        ) -> dict[FeatureType, dict[str, PolicyFeature]]:
             # We do not test features here
             return features
 
@@ -1457,7 +1473,9 @@ def test_override_with_nested_config():
         def get_config(self):
             return {"name": self.name, "simple_param": self.simple_param, "nested_config": self.nested_config}
 
-        def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+        def transform_features(
+            self, features: dict[FeatureType, dict[str, PolicyFeature]]
+        ) -> dict[FeatureType, dict[str, PolicyFeature]]:
             # We do not test features here
             return features
 
@@ -1551,7 +1569,9 @@ def test_override_with_callables():
         def get_config(self):
             return {"name": self.name}
 
-        def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+        def transform_features(
+            self, features: dict[FeatureType, dict[str, PolicyFeature]]
+        ) -> dict[FeatureType, dict[str, PolicyFeature]]:
             # We do not test features here
             return features
 
@@ -1686,7 +1706,9 @@ def test_override_with_device_strings():
         def load_state_dict(self, state):
             self.buffer = state["buffer"]
 
-        def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+        def transform_features(
+            self, features: dict[FeatureType, dict[str, PolicyFeature]]
+        ) -> dict[FeatureType, dict[str, PolicyFeature]]:
             # We do not test features here
             return features
 
@@ -1802,7 +1824,9 @@ class NonCompliantStep:
 class NonCallableStep:
     """Intentionally non-compliant: missing __call__."""
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         return features
 
 
@@ -1821,7 +1845,9 @@ class FeatureContractAddStep:
     def __call__(self, transition: EnvTransition) -> EnvTransition:
         return transition
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         features[self.key] = self.value
         return features
 
@@ -1836,7 +1862,9 @@ class FeatureContractMutateStep:
     def __call__(self, transition: EnvTransition) -> EnvTransition:
         return transition
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         features[self.key] = self.fn(features.get(self.key))
         return features
 
@@ -1848,7 +1876,9 @@ class FeatureContractBadReturnStep:
     def __call__(self, transition: EnvTransition) -> EnvTransition:
         return transition
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         return ["not-a-dict"]
 
 
@@ -1861,7 +1891,9 @@ class FeatureContractRemoveStep:
     def __call__(self, transition: EnvTransition) -> EnvTransition:
         return transition
 
-    def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+    def transform_features(
+        self, features: dict[FeatureType, dict[str, PolicyFeature]]
+    ) -> dict[FeatureType, dict[str, PolicyFeature]]:
         features.pop(self.key, None)
         return features
 
@@ -1913,7 +1945,9 @@ def test_features_execution_order_tracking():
         def __call__(self, transition: EnvTransition) -> EnvTransition:
             return transition
 
-        def transform_features(self, features: dict[str, PolicyFeature]) -> dict[str, PolicyFeature]:
+        def transform_features(
+            self, features: dict[FeatureType, dict[str, PolicyFeature]]
+        ) -> dict[FeatureType, dict[str, PolicyFeature]]:
             code = {"A": 1, "B": 2, "C": 3}[self.label]
             pf = features.get("order", PolicyFeature(type=FeatureType.ENV, shape=()))
             features["order"] = PolicyFeature(type=pf.type, shape=pf.shape + (code,))
