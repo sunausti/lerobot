@@ -22,7 +22,16 @@ torch.backends.cudnn.benchmark = True
 
 
 def main():
-    device = "cuda"
+    # Auto-detect best available device
+    if hasattr(torch, 'xpu') and torch.xpu.is_available():
+        device = "xpu"
+    elif torch.cuda.is_available():
+        device = "cuda"
+    else:
+        device = "cpu"
+    
+    print(f"Using device: {device}")
+    
     dataset_repo_id = "danaaubakirova/koch_test"
     # model_name = "pi0_base"
     # ckpt_torch_dir = Path.home() / f".cache/openpi/openpi-assets/checkpoints/{model_name}_pytorch"
@@ -52,26 +61,55 @@ def main():
     warmup_iters = 10
     benchmark_iters = 30
 
+    # Get device from policy
+    device = next(policy.parameters()).device
+    
+    # Device-specific synchronization function
+    def sync_device():
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        elif device.type == "xpu" and hasattr(torch.xpu, 'synchronize'):
+            torch.xpu.synchronize()
+        # Other devices don't need explicit synchronization
+
     # Warmup
     for _ in range(warmup_iters):
-        torch.cuda.synchronize()
+        sync_device()
         policy.select_action(batch)
         policy.reset()
+        sync_device()
+
+    # Benchmark - use device-agnostic timing
+    if device.type == "cuda":
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+    else:
+        import time
+        start_event = None
+        end_event = None
+
+    # Benchmark timing
+    if device.type == "cuda":
+        start_event.record()
+        for _ in range(benchmark_iters):
+            policy.select_action(batch)
+            policy.reset()
+        end_event.record()
+        
+        # Synchronize and measure time
         torch.cuda.synchronize()
-
-    # Benchmark
-    start_event = torch.cuda.Event(enable_timing=True)
-    end_event = torch.cuda.Event(enable_timing=True)
-
-    start_event.record()
-    for _ in range(benchmark_iters):
-        policy.select_action(batch)
-        policy.reset()
-    end_event.record()
-
-    # Synchronize and measure time
-    torch.cuda.synchronize()
-    elapsed_time_ms = start_event.elapsed_time(end_event)
+        elapsed_time_ms = start_event.elapsed_time(end_event)
+    else:
+        # For non-CUDA devices, use time-based measurement
+        import time
+        sync_device()
+        start_time = time.perf_counter()
+        for _ in range(benchmark_iters):
+            policy.select_action(batch)
+            policy.reset()
+        sync_device()
+        end_time = time.perf_counter()
+        elapsed_time_ms = (end_time - start_time) * 1000  # Convert to ms
 
     avg_time_per_iter = elapsed_time_ms / benchmark_iters
     print(f"Average execution time per iteration: {avg_time_per_iter:.3f} ms")

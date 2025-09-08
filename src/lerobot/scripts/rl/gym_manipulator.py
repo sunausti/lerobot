@@ -559,7 +559,7 @@ class RewardWrapper(gym.Wrapper):
         images = {}
         for key in observation:
             if "image" in key:
-                images[key] = observation[key].to(self.device, non_blocking=(self.device == "cuda"))
+                images[key] = observation[key].to(self.device, non_blocking=(self.device in ["cuda", "xpu"]))
                 if images[key].dim() == 3:
                     images[key] = images[key].unsqueeze(0)
 
@@ -794,7 +794,7 @@ class ConvertToLeRobotObservation(gym.ObservationWrapper):
         """
         observation = preprocess_observation(observation)
         observation = {
-            key: observation[key].to(self.device, non_blocking=self.device.type == "cuda")
+            key: observation[key].to(self.device, non_blocking=self.device.type in ["cuda", "xpu"])
             for key in observation
         }
         return observation

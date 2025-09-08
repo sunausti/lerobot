@@ -37,6 +37,7 @@ output_directory = Path("outputs/eval/example_pusht_diffusion")
 output_directory.mkdir(parents=True, exist_ok=True)
 
 # Select your device
+# Options: "cuda" (NVIDIA GPU), "xpu" (Intel GPU), "mps" (Apple Silicon), "cpu"
 device = "cuda"
 
 # Provide the [hugging face repo id](https://huggingface.co/lerobot/diffusion_pusht):

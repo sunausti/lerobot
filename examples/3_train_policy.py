@@ -35,6 +35,7 @@ def main():
     output_directory.mkdir(parents=True, exist_ok=True)
 
     # # Select your device
+    # Options: "cuda" (NVIDIA GPU), "xpu" (Intel GPU), "mps" (Apple Silicon), "cpu"
     device = torch.device("cuda")
 
     # Number of offline training steps (we'll only do offline training for this example.)

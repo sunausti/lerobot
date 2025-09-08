@@ -23,7 +23,16 @@ import torch
 from lerobot import available_cameras, available_motors, available_robots
 from lerobot.utils.import_utils import is_package_available
 
-DEVICE = os.environ.get("LEROBOT_TEST_DEVICE", "cuda") if torch.cuda.is_available() else "cpu"
+# Determine test device priority: XPU > CUDA > CPU
+def _get_test_device():
+    if hasattr(torch, 'xpu') and torch.xpu.is_available():
+        return "xpu"
+    elif torch.cuda.is_available():
+        return "cuda"
+    else:
+        return "cpu"
+
+DEVICE = os.environ.get("LEROBOT_TEST_DEVICE", _get_test_device())
 
 TEST_ROBOT_TYPES = []
 for robot_type in available_robots:
@@ -102,6 +111,41 @@ def require_cuda(func):
     def wrapper(*args, **kwargs):
         if not torch.cuda.is_available():
             pytest.skip("requires cuda")
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def require_xpu(func):
+    """
+    Decorator that skips the test if Intel GPU (XPU) is not available.
+    """
+    from functools import wraps
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not (hasattr(torch, 'xpu') and torch.xpu.is_available()):
+            pytest.skip("requires Intel GPU (XPU)")
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def require_accelerator(func):
+    """
+    Decorator that skips the test if no accelerator (CUDA, XPU, MPS) is available.
+    """
+    from functools import wraps
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        has_accelerator = (
+            torch.cuda.is_available() or 
+            (hasattr(torch, 'xpu') and torch.xpu.is_available()) or
+            torch.backends.mps.is_available()
+        )
+        if not has_accelerator:
+            pytest.skip("requires accelerator (CUDA, XPU, or MPS)")
         return func(*args, **kwargs)
 
     return wrapper

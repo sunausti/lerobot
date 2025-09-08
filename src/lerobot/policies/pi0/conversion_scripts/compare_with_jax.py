@@ -35,7 +35,16 @@ def display(tensor: torch.Tensor):
 
 def main():
     num_motors = 14
-    device = "cuda"
+    # Auto-detect best available device
+    if hasattr(torch, 'xpu') and torch.xpu.is_available():
+        device = "xpu"
+    elif torch.cuda.is_available():
+        device = "cuda"
+    else:
+        device = "cpu"
+    
+    print(f"Using device: {device}")
+    
     # model_name = "pi0_aloha_towel"
     model_name = "pi0_aloha_sim"
 

@@ -50,6 +50,7 @@ from lerobot.utils.utils import (
     has_method,
     init_logging,
 )
+from lerobot.utils.device_factory import create_device_manager
 from lerobot.utils.wandb_utils import WandBLogger
 
 
@@ -180,7 +181,7 @@ def train(cfg: TrainPipelineConfig):
         batch_size=cfg.batch_size,
         shuffle=shuffle,
         sampler=sampler,
-        pin_memory=device.type == "cuda",
+        pin_memory=device.type in ["cuda", "xpu"],
         drop_last=False,
     )
     dl_iter = cycle(dataloader)
@@ -207,7 +208,7 @@ def train(cfg: TrainPipelineConfig):
 
         for key in batch:
             if isinstance(batch[key], torch.Tensor):
-                batch[key] = batch[key].to(device, non_blocking=device.type == "cuda")
+                batch[key] = batch[key].to(device, non_blocking=device.type in ["cuda", "xpu"])
 
         train_tracker, output_dict = update_policy(
             train_tracker,

@@ -1,6 +1,30 @@
 #!/usr/bin/env python
 
-# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
+# Copyright 2024 The HuggingFace def get_safe_torch_device(try_device: str | torch.device, log: bool = False) -> torch.device:
+    """Given a string, return a torch.device with checks on whether the device is available."""
+    try_device = str(try_device)
+    match try_device:
+        case "cuda":
+            assert torch.cuda.is_available()
+            device = torch.device("cuda")
+        case "xpu":
+            assert hasattr(torch, 'xpu') and torch.xpu.is_available()
+            device = torch.device("xpu")
+            if log:
+                logging.info("Using Intel GPU (XPU).")
+        case "mps":
+            assert torch.backends.mps.is_available()
+            device = torch.device("mps")
+        case "cpu":
+            device = torch.device("cpu")
+            if log:
+                logging.warning("Using CPU, this will be slow.")
+        case _:
+            device = torch.device(try_device)
+            if log:
+                logging.warning(f"Using custom {try_device} device.")
+
+    return devices reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -81,10 +105,14 @@ def get_safe_torch_device(try_device: str, log: bool = False) -> torch.device:
 def get_safe_dtype(dtype: torch.dtype, device: str | torch.device):
     """
     mps is currently not compatible with float64
+    xpu (Intel GPU) may have limited support for some dtypes
     """
     if isinstance(device, torch.device):
         device = device.type
     if device == "mps" and dtype == torch.float64:
+        return torch.float32
+    elif device == "xpu" and dtype == torch.float64:
+        # Intel GPU typically works better with float32 for performance
         return torch.float32
     else:
         return dtype
@@ -94,6 +122,8 @@ def is_torch_device_available(try_device: str) -> bool:
     try_device = str(try_device)  # Ensure try_device is a string
     if try_device == "cuda":
         return torch.cuda.is_available()
+    elif try_device == "xpu":
+        return hasattr(torch, 'xpu') and torch.xpu.is_available()
     elif try_device == "mps":
         return torch.backends.mps.is_available()
     elif try_device == "cpu":
@@ -178,17 +208,38 @@ def _relative_path_between(path1: Path, path2: Path) -> Path:
         )
 
 
-def print_cuda_memory_usage():
-    """Use this function to locate and debug memory leak."""
+def print_gpu_memory_usage(device: str | torch.device = "cuda"):
+    """Use this function to locate and debug memory leak. Supports CUDA, XPU, and other devices."""
     import gc
+    from lerobot.utils.device_utils import empty_cache, get_memory_info
+
+    if isinstance(device, str):
+        device = torch.device(device)
 
     gc.collect()
-    # Also clear the cache if you want to fully release the memory
-    torch.cuda.empty_cache()
-    print(f"Current GPU Memory Allocated: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
-    print(f"Maximum GPU Memory Allocated: {torch.cuda.max_memory_allocated(0) / 1024**2:.2f} MB")
-    print(f"Current GPU Memory Reserved: {torch.cuda.memory_reserved(0) / 1024**2:.2f} MB")
-    print(f"Maximum GPU Memory Reserved: {torch.cuda.max_memory_reserved(0) / 1024**2:.2f} MB")
+    # Clear device cache
+    empty_cache(device)
+    
+    memory_info = get_memory_info(device)
+    if memory_info['allocated'] > 0 or memory_info['reserved'] > 0:
+        print(f"Current {device.type.upper()} Memory Allocated: {memory_info['allocated'] / 1024**2:.2f} MB")
+        print(f"Current {device.type.upper()} Memory Reserved: {memory_info['reserved'] / 1024**2:.2f} MB")
+        
+        # Try to get max memory info if available
+        if device.type == "cuda":
+            print(f"Maximum GPU Memory Allocated: {torch.cuda.max_memory_allocated(device) / 1024**2:.2f} MB")
+            print(f"Maximum GPU Memory Reserved: {torch.cuda.max_memory_reserved(device) / 1024**2:.2f} MB")
+        elif device.type == "xpu" and hasattr(torch.xpu, 'max_memory_allocated'):
+            print(f"Maximum XPU Memory Allocated: {torch.xpu.max_memory_allocated(device) / 1024**2:.2f} MB")
+            if hasattr(torch.xpu, 'max_memory_reserved'):
+                print(f"Maximum XPU Memory Reserved: {torch.xpu.max_memory_reserved(device) / 1024**2:.2f} MB")
+    else:
+        print(f"{device.type.upper()} memory info not available")
+
+
+def print_cuda_memory_usage():
+    """Legacy function for CUDA memory usage. Use print_gpu_memory_usage() instead."""
+    print_gpu_memory_usage("cuda")
 
 
 def capture_timestamp_utc():

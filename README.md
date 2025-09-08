@@ -98,6 +98,17 @@
   </tr>
 </table>
 
+## Hardware Support
+
+LeRobot supports training and inference on multiple hardware platforms:
+
+- **🟢 NVIDIA GPUs** - Full support with CUDA (recommended for high-performance training)
+- **🟢 Intel GPUs** - Full support with Intel Arc and Data Center GPUs via PyTorch XPU backend
+- **🟢 Apple Silicon** - Support via Metal Performance Shaders (MPS)
+- **🟢 CPU** - Fallback support for all platforms (slower training)
+
+For Intel GPU setup, see our [Intel GPU Setup Guide](INTEL_GPU_SETUP.md).
+
 ## Installation
 
 LeRobot works with Python 3.10+ and PyTorch 2.2+.
@@ -284,6 +295,12 @@ lerobot-eval \
     --policy.use_amp=false \
     --policy.device=cuda
 ```
+
+> **Note**: LeRobot supports multiple compute devices:
+> - `--policy.device=cuda` for NVIDIA GPUs
+> - `--policy.device=xpu` for Intel GPUs (requires PyTorch with Intel GPU support)
+> - `--policy.device=mps` for Apple Silicon
+> - `--policy.device=cpu` for CPU-only training (slower)
 
 Note: After training your own policy, you can re-evaluate the checkpoints with:
 
