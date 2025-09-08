@@ -119,7 +119,7 @@ class SACConfig(PreTrainedConfig):
     )
 
     # Architecture specifics
-    # Device to run the model on (e.g., "cuda", "cpu")
+    # Device to run the model on (e.g., "cuda", "xpu", "mps", "cpu")
     device: str = "cpu"
     # Device to store the model on
     storage_device: str = "cpu"

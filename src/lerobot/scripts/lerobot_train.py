@@ -249,7 +249,7 @@ def train(cfg: TrainPipelineConfig):
         batch_size=cfg.batch_size,
         shuffle=shuffle and not cfg.dataset.streaming,
         sampler=sampler,
-        pin_memory=device.type == "cuda",
+        pin_memory=device.type in ["cuda", "xpu"],
         drop_last=False,
         prefetch_factor=2,
     )

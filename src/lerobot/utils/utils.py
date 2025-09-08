@@ -1,6 +1,30 @@
 #!/usr/bin/env python
 
-# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
+# Copyright 2024 The HuggingFace def get_safe_torch_device(try_device: str | torch.device, log: bool = False) -> torch.device:
+    """Given a string, return a torch.device with checks on whether the device is available."""
+    try_device = str(try_device)
+    match try_device:
+        case "cuda":
+            assert torch.cuda.is_available()
+            device = torch.device("cuda")
+        case "xpu":
+            assert hasattr(torch, 'xpu') and torch.xpu.is_available()
+            device = torch.device("xpu")
+            if log:
+                logging.info("Using Intel GPU (XPU).")
+        case "mps":
+            assert torch.backends.mps.is_available()
+            device = torch.device("mps")
+        case "cpu":
+            device = torch.device("cpu")
+            if log:
+                logging.warning("Using CPU, this will be slow.")
+        case _:
+            device = torch.device(try_device)
+            if log:
+                logging.warning(f"Using custom {try_device} device.")
+
+    return devices reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -75,10 +99,14 @@ def get_safe_torch_device(try_device: str, log: bool = False) -> torch.device:
 def get_safe_dtype(dtype: torch.dtype, device: str | torch.device):
     """
     mps is currently not compatible with float64
+    xpu (Intel GPU) may have limited support for some dtypes
     """
     if isinstance(device, torch.device):
         device = device.type
     if device == "mps" and dtype == torch.float64:
+        return torch.float32
+    elif device == "xpu" and dtype == torch.float64:
+        # Intel GPU typically works better with float32 for performance
         return torch.float32
     else:
         return dtype
@@ -88,6 +116,8 @@ def is_torch_device_available(try_device: str) -> bool:
     try_device = str(try_device)  # Ensure try_device is a string
     if try_device == "cuda":
         return torch.cuda.is_available()
+    elif try_device == "xpu":
+        return hasattr(torch, 'xpu') and torch.xpu.is_available()
     elif try_device == "mps":
         return torch.backends.mps.is_available()
     elif try_device == "cpu":
