@@ -1,0 +1,67 @@
+# Intel GPU Simulation Configuration for LeRobot
+# This configuration is optimized for Intel Arc and Data Center GPUs
+
+# Device settings
+device: xpu
+use_amp: true  # Use automatic mixed precision for better performance
+pin_memory: false  # Intel GPU handles memory differently than CUDA
+
+# Training settings optimized for Intel GPU
+training:
+  batch_size: 32  # Optimal for Intel GPU (multiple of 16)
+  learning_rate: 0.001
+  num_epochs: 100
+  gradient_clip_norm: 1.0
+  dataloader_num_workers: 4
+  
+# Memory settings
+memory:
+  max_memory_gb: 8  # Adjust based on your Intel GPU memory
+  cache_size: 1000
+  memory_fraction: 0.9  # Use 90% of available GPU memory
+  
+# Environment settings
+env:
+  name: "CartPole-v1"  # Default environment for testing
+  max_episode_steps: 500
+  reward_threshold: 475.0
+  
+# Policy settings
+policy:
+  name: "DiffusionPolicy"
+  device: xpu
+  dtype: float32  # Intel GPU works best with float32
+  hidden_size: 128
+  num_layers: 3
+  activation: "relu"
+  
+# Optimization settings for Intel GPU
+optimization:
+  compile_model: true  # Use torch.compile if available
+  use_autocast: true
+  autocast_dtype: float16
+  gradient_accumulation_steps: 1
+  
+# Logging and monitoring
+logging:
+  log_level: "INFO"
+  log_gpu_memory: true
+  log_performance_metrics: true
+  save_checkpoints: true
+  checkpoint_freq: 1000
+  
+# Intel GPU specific optimizations
+intel_gpu:
+  # Environment variables (will be set automatically)
+  sycl_cache_persistent: true
+  use_immediate_command_lists: true
+  
+  # Performance tuning
+  batch_size_multiplier: 16  # Batch sizes should be multiples of this
+  preferred_dtype: "float32"
+  enable_memory_pool: true
+  
+  # Feature flags
+  support_mixed_precision: true
+  support_torch_compile: true
+  support_gradient_checkpointing: false  # May not be stable yet
