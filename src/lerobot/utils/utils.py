@@ -1,30 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2024 The HuggingFace def get_safe_torch_device(try_device: str | torch.device, log: bool = False) -> torch.device:
-    """Given a string, return a torch.device with checks on whether the device is available."""
-    try_device = str(try_device)
-    match try_device:
-        case "cuda":
-            assert torch.cuda.is_available()
-            device = torch.device("cuda")
-        case "xpu":
-            assert hasattr(torch, 'xpu') and torch.xpu.is_available()
-            device = torch.device("xpu")
-            if log:
-                logging.info("Using Intel GPU (XPU).")
-        case "mps":
-            assert torch.backends.mps.is_available()
-            device = torch.device("mps")
-        case "cpu":
-            device = torch.device("cpu")
-            if log:
-                logging.warning("Using CPU, this will be slow.")
-        case _:
-            device = torch.device(try_device)
-            if log:
-                logging.warning(f"Using custom {try_device} device.")
-
-    return devices reserved.
+# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -61,8 +37,11 @@ def inside_slurm():
 
 
 def auto_select_torch_device() -> torch.device:
-    """Tries to select automatically a torch device."""
-    if torch.cuda.is_available():
+    """Tries to select automatically a torch device with Intel GPU priority."""
+    if hasattr(torch, 'xpu') and torch.xpu.is_available():
+        logging.info("Intel GPU (XPU) backend detected, using xpu.")
+        return torch.device("xpu")
+    elif torch.cuda.is_available():
         logging.info("Cuda backend detected, using cuda.")
         return torch.device("cuda")
     elif torch.backends.mps.is_available():
@@ -74,16 +53,25 @@ def auto_select_torch_device() -> torch.device:
 
 
 # TODO(Steven): Remove log. log shouldn't be an argument, this should be handled by the logger level
-def get_safe_torch_device(try_device: str, log: bool = False) -> torch.device:
+def get_safe_torch_device(try_device: str | torch.device, log: bool = False) -> torch.device:
     """Given a string, return a torch.device with checks on whether the device is available."""
     try_device = str(try_device)
     match try_device:
         case "cuda":
             assert torch.cuda.is_available()
             device = torch.device("cuda")
+            if log:
+                logging.info("Using CUDA GPU.")
+        case "xpu":
+            assert hasattr(torch, 'xpu') and torch.xpu.is_available()
+            device = torch.device("xpu")
+            if log:
+                logging.info("Using Intel GPU (XPU).")
         case "mps":
             assert torch.backends.mps.is_available()
             device = torch.device("mps")
+            if log:
+                logging.info("Using Apple Metal Performance Shaders (MPS).")
         case "cpu":
             device = torch.device("cpu")
             if log:
@@ -127,12 +115,16 @@ def is_torch_device_available(try_device: str) -> bool:
 
 
 def is_amp_available(device: str):
+    """Check if automatic mixed precision is available for the given device."""
     if device in ["cuda", "cpu"]:
+        return True
+    elif device == "xpu":
+        # Intel GPU supports AMP
         return True
     elif device == "mps":
         return False
     else:
-        raise ValueError(f"Unknown device '{device}.")
+        raise ValueError(f"Unknown device '{device}'.")
 
 
 def init_logging(
