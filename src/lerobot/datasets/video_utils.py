@@ -233,7 +233,8 @@ def decode_video_frames_torchcodec(
         log_loaded_timestamps: Whether to log loaded timestamps.
         decoder_cache: Optional decoder cache instance. Uses default if None.
 
-    Note: Setting device="cuda" outside the main process, e.g. in data loader workers, will lead to CUDA initialization errors.
+    Note: Setting device="cuda" or device="xpu" outside the main process, e.g. in data loader workers,
+    will lead to GPU initialization errors. Use device="cpu" in data loader workers.
 
     Note: Video benefits from inter-frame compression. Instead of storing every frame individually,
     the encoder stores a reference frame (or a key frame) and subsequent frames as differences relative to

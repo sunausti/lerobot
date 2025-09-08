@@ -81,7 +81,7 @@ class ReplayBuffer:
     def __init__(
         self,
         capacity: int,
-        device: str = "cuda:0",
+        device: str = "cuda:0",  # supports "cuda", "xpu", "mps", "cpu"
         state_keys: Sequence[str] | None = None,
         image_augmentation_function: Callable | None = None,
         use_drq: bool = True,
@@ -415,7 +415,7 @@ class ReplayBuffer:
     def from_lerobot_dataset(
         cls,
         lerobot_dataset: LeRobotDataset,
-        device: str = "cuda:0",
+        device: str = "cuda:0",  # supports "cuda", "xpu", "mps", "cpu"
         state_keys: Sequence[str] | None = None,
         capacity: int | None = None,
         image_augmentation_function: Callable | None = None,

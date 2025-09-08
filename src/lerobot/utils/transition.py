@@ -33,7 +33,7 @@ class Transition(TypedDict):
 
 def move_transition_to_device(transition: Transition, device: str = "cpu") -> Transition:
     device = torch.device(device)
-    non_blocking = device.type == "cuda"
+    non_blocking = device.type in ["cuda", "xpu"]
 
     # Move state tensors to device
     transition["state"] = {
