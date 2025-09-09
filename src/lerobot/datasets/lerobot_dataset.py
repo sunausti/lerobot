@@ -453,7 +453,20 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.episodes = episodes
         self.tolerance_s = tolerance_s
         self.revision = revision if revision else CODEBASE_VERSION
-        self.video_backend = video_backend if video_backend else get_safe_default_codec()
+        
+        # Intel GPU optimization: choose appropriate video backend
+        if video_backend is None:
+            try:
+                import torch
+                if hasattr(torch, 'xpu') and torch.xpu.is_available():
+                    video_backend = "pyav"  # Force pyav for Intel GPU compatibility
+                    logging.info("Intel GPU detected, using 'pyav' video backend for compatibility")
+                else:
+                    video_backend = get_safe_default_codec()
+            except ImportError:
+                video_backend = get_safe_default_codec()
+        
+        self.video_backend = video_backend
         self.delta_indices = None
         self.batch_encoding_size = batch_encoding_size
         self.episodes_since_last_encoding = 0
@@ -689,8 +702,22 @@ class LeRobotDataset(torch.utils.data.Dataset):
         item = {}
         for vid_key, query_ts in query_timestamps.items():
             video_path = self.root / self.meta.get_video_file_path(ep_idx, vid_key)
-            frames = decode_video_frames(video_path, query_ts, self.tolerance_s, self.video_backend)
-            item[vid_key] = frames.squeeze(0)
+            try:
+                frames = decode_video_frames(video_path, query_ts, self.tolerance_s, self.video_backend)
+                item[vid_key] = frames.squeeze(0)
+            except NotImplementedError as e:
+                # Handle Intel GPU compatibility issues
+                error_msg = str(e).lower()
+                if "xpu" in error_msg and self.video_backend == "torchcodec":
+                    logging.warning(
+                        f"torchcodec failed with Intel GPU for video {vid_key}, "
+                        "falling back to 'pyav' backend"
+                    )
+                    # Retry with pyav backend
+                    frames = decode_video_frames(video_path, query_ts, self.tolerance_s, "pyav")
+                    item[vid_key] = frames.squeeze(0)
+                else:
+                    raise e
 
         return item
 

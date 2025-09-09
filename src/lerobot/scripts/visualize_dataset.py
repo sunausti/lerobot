@@ -75,6 +75,7 @@ import torch.utils.data
 import tqdm
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.utils.intel_gpu_utils import is_intel_gpu_available, optimize_dataloader_for_intel_gpu
 
 
 class EpisodeSampler(torch.utils.data.Sampler):
@@ -119,12 +120,22 @@ def visualize_dataset(
 
     logging.info("Loading dataloader")
     episode_sampler = EpisodeSampler(dataset, episode_index)
-    dataloader = torch.utils.data.DataLoader(
-        dataset,
-        num_workers=num_workers,
-        batch_size=batch_size,
-        sampler=episode_sampler,
-    )
+    
+    # Intel GPU optimization for DataLoader
+    dataloader_kwargs = {
+        "num_workers": num_workers,
+        "batch_size": batch_size,
+        "sampler": episode_sampler,
+        "pin_memory": True,  # Will be adjusted for Intel GPU
+    }
+    
+    # Apply Intel GPU optimizations
+    dataloader_kwargs = optimize_dataloader_for_intel_gpu(dataloader_kwargs)
+    
+    if is_intel_gpu_available():
+        logging.info("Intel GPU detected, applying DataLoader optimizations")
+    
+    dataloader = torch.utils.data.DataLoader(dataset, **dataloader_kwargs)
 
     logging.info("Starting Rerun")
 
@@ -144,35 +155,108 @@ def visualize_dataset(
 
     logging.info("Logging to Rerun")
 
-    for batch in tqdm.tqdm(dataloader, total=len(dataloader)):
-        # iterate over the batch
-        for i in range(len(batch["index"])):
-            rr.set_time_sequence("frame_index", batch["frame_index"][i].item())
-            rr.set_time_seconds("timestamp", batch["timestamp"][i].item())
+    try:
+        for batch in tqdm.tqdm(dataloader, total=len(dataloader)):
+            # iterate over the batch
+            for i in range(len(batch["index"])):
+                rr.set_time_sequence("frame_index", batch["frame_index"][i].item())
+                rr.set_time_seconds("timestamp", batch["timestamp"][i].item())
 
-            # display each camera image
-            for key in dataset.meta.camera_keys:
-                # TODO(rcadene): add `.compress()`? is it lossless?
-                rr.log(key, rr.Image(to_hwc_uint8_numpy(batch[key][i])))
+                # display each camera image
+                for key in dataset.meta.camera_keys:
+                    # TODO(rcadene): add `.compress()`? is it lossless?
+                    rr.log(key, rr.Image(to_hwc_uint8_numpy(batch[key][i])))
 
-            # display each dimension of action space (e.g. actuators command)
-            if "action" in batch:
-                for dim_idx, val in enumerate(batch["action"][i]):
-                    rr.log(f"action/{dim_idx}", rr.Scalar(val.item()))
+                # display each dimension of action space (e.g. actuators command)
+                if "action" in batch:
+                    for dim_idx, val in enumerate(batch["action"][i]):
+                        rr.log(f"action/{dim_idx}", rr.Scalar(val.item()))
 
-            # display each dimension of observed state space (e.g. agent position in joint space)
-            if "observation.state" in batch:
-                for dim_idx, val in enumerate(batch["observation.state"][i]):
-                    rr.log(f"state/{dim_idx}", rr.Scalar(val.item()))
+                # display each dimension of observed state space (e.g. agent position in joint space)
+                if "observation.state" in batch:
+                    for dim_idx, val in enumerate(batch["observation.state"][i]):
+                        rr.log(f"state/{dim_idx}", rr.Scalar(val.item()))
 
-            if "next.done" in batch:
-                rr.log("next.done", rr.Scalar(batch["next.done"][i].item()))
+                if "next.done" in batch:
+                    rr.log("next.done", rr.Scalar(batch["next.done"][i].item()))
 
-            if "next.reward" in batch:
-                rr.log("next.reward", rr.Scalar(batch["next.reward"][i].item()))
+                if "next.reward" in batch:
+                    rr.log("next.reward", rr.Scalar(batch["next.reward"][i].item()))
 
-            if "next.success" in batch:
-                rr.log("next.success", rr.Scalar(batch["next.success"][i].item()))
+                if "next.success" in batch:
+                    rr.log("next.success", rr.Scalar(batch["next.success"][i].item()))
+                    
+    except NotImplementedError as e:
+        # Handle Intel GPU specific video decoding errors
+        error_msg = str(e).lower()
+        if "xpu" in error_msg or "intel" in error_msg:
+            logging.error(
+                "Intel GPU video decoding error detected. "
+                "This is likely due to torchcodec incompatibility with Intel GPU.\n"
+                "Solutions:\n"
+                "1. Use dataset with video_backend='pyav'\n"
+                "2. Reduce num_workers to 0\n"
+                "3. Use smaller batch_size\n"
+                f"Original error: {e}"
+            )
+            # Try to suggest a fix
+            logging.info("Attempting to reload dataset with Intel GPU compatible settings...")
+            try:
+                # Create a new dataset with Intel GPU optimizations
+                intel_dataset = LeRobotDataset(
+                    dataset.repo_id,
+                    root=dataset.root,
+                    episodes=dataset.episodes,
+                    video_backend="pyav",  # Force pyav backend
+                    image_transforms=dataset.image_transforms,
+                    delta_timestamps=dataset.delta_timestamps,
+                )
+                
+                # Create new optimized dataloader
+                intel_dataloader_kwargs = {
+                    "num_workers": 0,  # No multiprocessing
+                    "batch_size": min(batch_size, 8),  # Smaller batch
+                    "sampler": episode_sampler,
+                    "pin_memory": False,  # Intel GPU doesn't support pin_memory
+                }
+                
+                intel_dataloader = torch.utils.data.DataLoader(intel_dataset, **intel_dataloader_kwargs)
+                
+                logging.info("Retrying with Intel GPU optimized settings...")
+                
+                for batch in tqdm.tqdm(intel_dataloader, total=len(intel_dataloader)):
+                    # Same processing as above
+                    for i in range(len(batch["index"])):
+                        rr.set_time_sequence("frame_index", batch["frame_index"][i].item())
+                        rr.set_time_seconds("timestamp", batch["timestamp"][i].item())
+
+                        for key in intel_dataset.meta.camera_keys:
+                            rr.log(key, rr.Image(to_hwc_uint8_numpy(batch[key][i])))
+
+                        if "action" in batch:
+                            for dim_idx, val in enumerate(batch["action"][i]):
+                                rr.log(f"action/{dim_idx}", rr.Scalar(val.item()))
+
+                        if "observation.state" in batch:
+                            for dim_idx, val in enumerate(batch["observation.state"][i]):
+                                rr.log(f"state/{dim_idx}", rr.Scalar(val.item()))
+
+                        if "next.done" in batch:
+                            rr.log("next.done", rr.Scalar(batch["next.done"][i].item()))
+
+                        if "next.reward" in batch:
+                            rr.log("next.reward", rr.Scalar(batch["next.reward"][i].item()))
+
+                        if "next.success" in batch:
+                            rr.log("next.success", rr.Scalar(batch["next.success"][i].item()))
+                            
+                logging.info("Successfully processed with Intel GPU optimizations!")
+                
+            except Exception as retry_error:
+                logging.error(f"Intel GPU optimization retry also failed: {retry_error}")
+                raise e
+        else:
+            raise e
 
     if mode == "local" and save:
         # save .rrd locally

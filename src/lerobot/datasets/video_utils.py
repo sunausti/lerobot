@@ -31,6 +31,17 @@ from PIL import Image
 
 
 def get_safe_default_codec():
+    # Check if Intel GPU is available and being used
+    try:
+        import torch
+        if hasattr(torch, 'xpu') and torch.xpu.is_available():
+            logging.info(
+                "Intel GPU (XPU) detected. Using 'pyav' backend as torchcodec is not compatible with Intel GPU."
+            )
+            return "pyav"
+    except ImportError:
+        pass
+    
     if importlib.util.find_spec("torchcodec"):
         return "torchcodec"
     else:
@@ -62,8 +73,32 @@ def decode_video_frames(
     """
     if backend is None:
         backend = get_safe_default_codec()
+    
+    # Check for Intel GPU and force pyav backend if torchcodec is being used
+    try:
+        import torch
+        if hasattr(torch, 'xpu') and torch.xpu.is_available() and backend == "torchcodec":
+            logging.warning(
+                "Intel GPU (XPU) detected with torchcodec backend. "
+                "Switching to 'pyav' backend for compatibility."
+            )
+            backend = "pyav"
+    except ImportError:
+        pass
+    
     if backend == "torchcodec":
-        return decode_video_frames_torchcodec(video_path, timestamps, tolerance_s)
+        try:
+            return decode_video_frames_torchcodec(video_path, timestamps, tolerance_s)
+        except NotImplementedError as e:
+            # Check if this is an Intel GPU related error
+            error_msg = str(e).lower()
+            if "xpu" in error_msg or "intel" in error_msg:
+                logging.warning(
+                    "torchcodec failed with Intel GPU, falling back to 'pyav' backend"
+                )
+                return decode_video_frames_torchvision(video_path, timestamps, tolerance_s, "pyav")
+            else:
+                raise e
     elif backend in ["pyav", "video_reader"]:
         return decode_video_frames_torchvision(video_path, timestamps, tolerance_s, backend)
     else:
@@ -179,6 +214,9 @@ def decode_video_frames_torchcodec(
 
     Note: Setting device="cuda" or device="xpu" outside the main process, e.g. in data loader workers, 
     will lead to GPU initialization errors. Use device="cpu" in data loader workers.
+    
+    Note: Intel GPU (XPU) is not supported by torchcodec. This function will force device="cpu"
+    when Intel GPU is detected to avoid NotImplementedError.
 
     Note: Video benefits from inter-frame compression. Instead of storing every frame individually,
     the encoder stores a reference frame (or a key frame) and subsequent frames as differences relative to
@@ -192,8 +230,32 @@ def decode_video_frames_torchcodec(
     else:
         raise ImportError("torchcodec is required but not available.")
 
+    # Check for Intel GPU and force CPU device for compatibility
+    try:
+        import torch
+        if hasattr(torch, 'xpu') and torch.xpu.is_available() and device != "cpu":
+            logging.warning(
+                f"Intel GPU detected. Forcing device='cpu' for torchcodec compatibility instead of device='{device}'"
+            )
+            device = "cpu"
+    except ImportError:
+        pass
+
     # initialize video decoder
-    decoder = VideoDecoder(video_path, device=device, seek_mode="approximate")
+    try:
+        decoder = VideoDecoder(video_path, device=device, seek_mode="approximate")
+    except NotImplementedError as e:
+        # If this is an XPU-related error, provide helpful message
+        error_msg = str(e).lower()
+        if "xpu" in error_msg:
+            raise NotImplementedError(
+                "torchcodec does not support Intel GPU (XPU). "
+                "Please use 'pyav' backend instead by setting video_backend='pyav' "
+                "or let the system auto-detect the appropriate backend."
+            ) from e
+        else:
+            raise e
+    
     loaded_frames = []
     loaded_ts = []
     # get metadata for frame information
