@@ -1,0 +1,47 @@
+graph TB
+    subgraph "🤖 LeRobot Framework"
+        subgraph "💻 User Interface"
+            CLI["🔧 CLI Tools<br/>train | eval | record"]
+        end
+        
+        subgraph "🧠 Core Components"
+            Policies["🎯 AI Policies<br/>ACT | Diffusion | SAC"]
+            Data["📊 Datasets<br/>Real & Simulation Data"]
+            Robots["🤖 Robot Control<br/>ALOHA | XArm | Custom"]
+        end
+        
+        subgraph "⚡ Acceleration"
+            CPU["💻 CPU"]
+            CUDA["🎮 NVIDIA GPU"]
+            IntelGPU["🔧 Intel GPU"]
+        end
+        
+        subgraph "🌍 Environments"
+            Sim["🎮 Simulation<br/>MuJoCo | Gymnasium"]
+            Real["🏭 Real World<br/>Physical Robots"]
+        end
+    end
+    
+    %% Main workflow
+    CLI --> Policies
+    CLI --> Data
+    CLI --> Robots
+    
+    Policies --> CPU
+    Policies --> CUDA
+    Policies --> IntelGPU
+    
+    Data --> Policies
+    Robots --> Sim
+    Robots --> Real
+    
+    %% Styling
+    classDef cliStyle fill:#ff6b6b,stroke:#333,stroke-width:3px,color:#fff
+    classDef coreStyle fill:#4ecdc4,stroke:#333,stroke-width:2px,color:#fff
+    classDef accelStyle fill:#ff8c00,stroke:#333,stroke-width:2px,color:#fff
+    classDef envStyle fill:#96ceb4,stroke:#333,stroke-width:2px,color:#fff
+    
+    class CLI cliStyle
+    class Policies,Data,Robots coreStyle
+    class CPU,CUDA,IntelGPU accelStyle
+    class Sim,Real envStyle
