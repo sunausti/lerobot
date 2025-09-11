@@ -1,0 +1,35 @@
+flowchart LR
+    subgraph "📋 LeRobot 核心流程"
+        A["📹 数据收集<br/>Record Episodes"]
+        B["📊 数据集<br/>Dataset"]
+        C["🧠 策略训练<br/>Policy Training"]
+        D["📈 模型评估<br/>Evaluation"]
+        E["🤖 机器人部署<br/>Robot Control"]
+    end
+    
+    subgraph "🔧 支持组件"
+        F["⚙️ 硬件支持<br/>Cameras | Motors"]
+        G["⚡ 计算加速<br/>CPU | GPU | Intel GPU"]
+        H["🌍 环境<br/>Simulation | Real World"]
+    end
+    
+    %% Main flow
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    
+    %% Support connections
+    F --> A
+    F --> E
+    G --> C
+    G --> D
+    H --> A
+    H --> E
+    
+    %% Styling
+    classDef flowStyle fill:#4ecdc4,stroke:#333,stroke-width:2px,color:#fff
+    classDef supportStyle fill:#ffeaa7,stroke:#333,stroke-width:2px,color:#000
+    
+    class A,B,C,D,E flowStyle
+    class F,G,H supportStyle

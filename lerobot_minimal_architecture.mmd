@@ -1,0 +1,36 @@
+graph TB
+    LeRobot["🤖 LeRobot<br/>机器人学习框架"]
+    
+    CLI["💻 命令行工具"]
+    Train["🎯 训练"]
+    Eval["📊 评估"]
+    Data["📊 数据管理"]
+    
+    Policies["🧠 AI策略<br/>ACT | Diffusion | SAC"]
+    Robots["🤖 机器人<br/>ALOHA | XArm | 自定义"]
+    Envs["🌍 环境<br/>仿真 | 真实"]
+    
+    GPU["⚡ 加速<br/>CUDA | Intel GPU"]
+    
+    LeRobot --> CLI
+    CLI --> Train
+    CLI --> Eval
+    CLI --> Data
+    
+    Train --> Policies
+    Eval --> Policies
+    Data --> Policies
+    
+    Policies --> GPU
+    Policies --> Robots
+    Robots --> Envs
+    
+    classDef mainStyle fill:#ff6b6b,stroke:#333,stroke-width:3px,color:#fff,font-size:16px
+    classDef cliStyle fill:#4ecdc4,stroke:#333,stroke-width:2px,color:#fff
+    classDef coreStyle fill:#45b7d1,stroke:#333,stroke-width:2px,color:#fff
+    classDef accelStyle fill:#ff8c00,stroke:#333,stroke-width:2px,color:#fff
+    
+    class LeRobot mainStyle
+    class CLI,Train,Eval,Data cliStyle
+    class Policies,Robots,Envs coreStyle
+    class GPU accelStyle
