@@ -1,0 +1,93 @@
+
+graph TB
+    subgraph "🏗️ LeRobot Software Architecture"
+        subgraph "Layer 7: Scripts & CLI Tools"
+            CLI["🔧 Command Line Interface<br/>lerobot-train | lerobot-eval | lerobot-record<br/>lerobot-replay | lerobot-teleoperate"]
+        end
+        
+        subgraph "Layer 6: Application Logic"
+            Train["🎯 Training Pipeline<br/>Policy Training & Optimization"]
+            Eval["📊 Evaluation Pipeline<br/>Performance Assessment"]
+            Record["📹 Data Collection<br/>Episode Recording"]
+            Teleop["🎮 Teleoperation<br/>Remote Control"]
+        end
+        
+        subgraph "Layer 5: Machine Learning"
+            Policies["🧠 Policy Models<br/>ACT | Diffusion | SAC | VQ-BeT<br/>TDMPC | SmoLVLA"]
+            Datasets["💾 Dataset Management<br/>LeRobotDataset | Transforms<br/>Video Processing | Statistics"]
+        end
+        
+        subgraph "Layer 4: Robotics Abstraction"
+            Robots["🤖 Robot Controllers<br/>Koch | SO100/SO101 | ViperX<br/>Reachy2 | Stretch3 | Hope Jr | LeKiwi"]
+            Envs["🌍 Environments<br/>Gymnasium | MuJoCo | PushT<br/>Xarm | Real World | Custom"]
+        end
+        
+        subgraph "Layer 3: Hardware Interface"
+            Hardware["⚙️ Hardware Drivers<br/>Cameras | Motors | Sensors<br/>Teleoperators | Transport"]
+            Intel["🔧 Intel GPU Support<br/>XPU Backend | Video Compatibility<br/>Optimized DataLoader"]
+        end
+        
+        subgraph "Layer 2: System Utilities"
+            Utils["🛠️ Core Utilities<br/>Device Detection | Configuration<br/>Calibration | Error Handling"]
+        end
+        
+        subgraph "Layer 1: Foundation"
+            Core["🏛️ Framework Core<br/>PyTorch | HuggingFace<br/>Gymnasium | Rerun"]
+        end
+    end
+    
+    subgraph "🔄 Data Flow"
+        DataFlow["Hardware → Data Collection → Dataset → Training → Policy → Evaluation → Deployment"]
+    end
+    
+    subgraph "🎯 Supported Use Cases"
+        UseCases["Simulation Training | Real Robot Control<br/>Multi-modal Learning | Vision-Language-Action<br/>Imitation Learning | Reinforcement Learning"]
+    end
+    
+    %% Connections showing layer dependencies
+    CLI --> Train
+    CLI --> Eval  
+    CLI --> Record
+    CLI --> Teleop
+    
+    Train --> Policies
+    Train --> Datasets
+    Eval --> Policies
+    Record --> Datasets
+    Teleop --> Robots
+    
+    Policies --> Robots
+    Policies --> Envs
+    Datasets --> Hardware
+    
+    Robots --> Hardware
+    Envs --> Hardware
+    Hardware --> Intel
+    
+    Hardware --> Utils
+    Intel --> Utils
+    
+    Utils --> Core
+    
+    %% Data flow connections
+    Hardware --> DataFlow
+    DataFlow --> UseCases
+    
+    classDef layer7 fill:#ff6b6b,stroke:#333,stroke-width:3px,color:#fff
+    classDef layer6 fill:#4ecdc4,stroke:#333,stroke-width:3px,color:#fff
+    classDef layer5 fill:#45b7d1,stroke:#333,stroke-width:3px,color:#fff
+    classDef layer4 fill:#96ceb4,stroke:#333,stroke-width:3px,color:#fff
+    classDef layer3 fill:#ffeaa7,stroke:#333,stroke-width:3px,color:#000
+    classDef layer2 fill:#dda0dd,stroke:#333,stroke-width:3px,color:#000
+    classDef layer1 fill:#f8a5c2,stroke:#333,stroke-width:3px,color:#000
+    classDef special fill:#ff8c00,stroke:#333,stroke-width:3px,color:#fff
+    
+    class CLI layer7
+    class Train,Eval,Record,Teleop layer6
+    class Policies,Datasets layer5
+    class Robots,Envs layer4
+    class Hardware,Intel layer3
+    class Utils layer2
+    class Core layer1
+    class DataFlow,UseCases special
+
