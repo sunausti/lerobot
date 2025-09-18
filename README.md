@@ -158,6 +158,20 @@ pip install -e .
 > **NOTE:** If you encounter build errors, you may need to install additional dependencies (`cmake`, `build-essential`, and `ffmpeg libs`). On Linux, run:
 > `sudo apt-get install cmake build-essential python3-dev pkg-config libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev libswscale-dev libswresample-dev libavfilter-dev`. For other systems, see: [Compiling PyAV](https://pyav.org/docs/develop/overview/installation.html#bring-your-own-ffmpeg)
 
+
+> **NOTE:** for pytorch intel GPU
+
+Follow [Intel GPU Guide](https://dgpu-docs.intel.com/driver/client/overview.html#ubuntu-latest) and [Pytorch for Intel XPU](https://docs.pytorch.org/docs/stable/notes/get_start_xpu.html)
+```bash
+sudo apt-get update
+sudo apt-get install -y software-properties-common
+# Add the intel-graphics PPA
+sudo add-apt-repository -y ppa:kobuk-team/intel-graphics
+sudo apt-get install -y libze-intel-gpu1 libze1 intel-metrics-discovery intel-opencl-icd clinfo intel-gsc
+sudo apt-get install -y intel-media-va-driver-non-free libmfx-gen1 libvpl2 libvpl-tools libva-glx2 va-driver-all vainfo
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/xpu --force-reinstall
+```
+	
 For simulations, 🤗 LeRobot comes with gymnasium environments that can be installed as extras:
 
 - [aloha](https://github.com/huggingface/gym-aloha)
