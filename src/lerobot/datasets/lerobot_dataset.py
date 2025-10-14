@@ -457,7 +457,6 @@ class LeRobotDataset(torch.utils.data.Dataset):
         # Intel GPU optimization: choose appropriate video backend
         if video_backend is None:
             try:
-                import torch
                 if hasattr(torch, 'xpu') and torch.xpu.is_available():
                     video_backend = "pyav"  # Force pyav for Intel GPU compatibility
                     logging.info("Intel GPU detected, using 'pyav' video backend for compatibility")
