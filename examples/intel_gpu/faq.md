@@ -97,3 +97,23 @@ lerobot-record \
     --policy.device=xpu \
     --policy.path=/home/robot/sunausti/train/act_so101_act_1014_b60/checkpoints/last/pretrained_model/
 ```
+
+## train pi0.5 on 4090D
+
+```
+lerobot-train \
+    --dataset.repo_id=hzsunxuan/record-signal-arm-1014 \
+    --policy.type=pi05 \
+    --output_dir=./outputs/pi05_training_1016 \
+    --job_name=pi05_training \
+    --policy.repo_id=hzsunxuan/pi05_policy1016 \
+    --policy.pretrained_path=lerobot/pi05_base \
+    --policy.compile_model=true \
+    --policy.gradient_checkpointing=true \
+    --wandb.enable=false \
+    --policy.dtype=bfloat16 \
+    --steps=3000 \
+    --policy.device=cuda \
+    --policy.normalization_mapping='{"ACTION": "MEAN_STD", "STATE": "MEAN_STD", "VISUAL": "IDENTITY"}' \
+    --batch_size=16
+```
