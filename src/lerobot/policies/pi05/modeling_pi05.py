@@ -73,7 +73,7 @@ def create_sinusoidal_pos_embedding(  # see openpi `create_sinusoidal_pos_embedd
     if time.ndim != 1:
         raise ValueError("The time tensor is expected to be of shape `(batch_size, )`.")
 
-    dtype = get_safe_dtype(torch.float64, device.type)
+    dtype = get_safe_dtype(torch.float32, device.type)
     fraction = torch.linspace(0.0, 1.0, dimension // 2, dtype=dtype, device=device)
     period = min_period * (max_period / min_period) ** fraction
 
@@ -516,12 +516,19 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
             precision=config.dtype,
         )
 
+        # Force eager attention implementation to avoid backend errors on some hardware
+        self.paligemma_with_expert.paligemma.vision_tower.config._attn_implementation = "eager"
         self.action_in_proj = nn.Linear(config.max_action_dim, action_expert_config.width)
         self.action_out_proj = nn.Linear(action_expert_config.width, config.max_action_dim)
 
         self.time_mlp_in = nn.Linear(action_expert_config.width, action_expert_config.width)
         self.time_mlp_out = nn.Linear(action_expert_config.width, action_expert_config.width)
 
+        if config.dtype == "bfloat16":
+            # self.action_in_proj.to(dtype=torch.bfloat16)
+            self.action_out_proj.to(dtype=torch.bfloat16)
+            # self.time_mlp_in.to(dtype=torch.bfloat16)
+            # self.time_mlp_out.to(dtype=torch.bfloat16)
         # Initialize gradient checkpointing flag
         self.gradient_checkpointing_enabled = False
 
@@ -816,8 +823,11 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
 
         suffix_out = outputs_embeds[1]
         suffix_out = suffix_out[:, -self.config.chunk_size :]
-        suffix_out = suffix_out.to(dtype=torch.float32)
-        return self.action_out_proj(suffix_out)
+        # avoid error
+        #suffix_out = suffix_out.to(dtype=torch.float32)
+        qsuffix_out = suffix_out.to(dtype=torch.bfloat16)
+        ret = self.action_out_proj(suffix_out)
+        return ret
 
 
 class PI05Policy(PreTrainedPolicy):
