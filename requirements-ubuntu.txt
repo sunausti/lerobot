@@ -135,8 +135,8 @@ einops==0.8.1
     # via lerobot
 eiquadprog==1.2.9
     # via placo
-evdev==1.9.2
-    # via pynput
+#evdev==1.9.2
+#    # via pynput
 exceptiongroup==1.3.0
     # via
     #   ipython
