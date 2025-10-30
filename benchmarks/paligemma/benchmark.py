@@ -102,6 +102,8 @@ def run_benchmark(
     # 2. Get model configuration and initialize model
     config = get_pi05_paligemma_config(paligemma_variant)
     model = PaliGemmaForConditionalGeneration(config)
+    model.vision_tower.config._attn_implementation = "eager"
+    model.language_model.config._attn_implementation = "eager"
     model.eval()
 
     # 3. Set data type and move model to device
