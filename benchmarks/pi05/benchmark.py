@@ -22,6 +22,8 @@ import argparse
 import sys
 import time
 from contextlib import nullcontext
+import logging
+import os
 from pathlib import Path
 
 import numpy as np
@@ -29,6 +31,13 @@ import torch
 from PIL import Image
 from transformers import AutoProcessor
 
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    force=True
+)
 # Add the 'src' directory to the Python path so we can import lerobot modules
 lerobot_src_path = Path(__file__).parent.parent.parent / "src"
 sys.path.insert(0, str(lerobot_src_path))

@@ -745,23 +745,29 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
 
         bsize = tokens.shape[0]
         device = tokens.device
-
+        import time as sys_time
         if noise is None:
             # Sample noise with padded dimension as expected by action_in_proj
+            start_time = sys_time.perf_counter()
             actions_shape = (
                 bsize,
                 self.config.chunk_size,
                 self.config.max_action_dim,
             )  # Use config max_action_dim for internal processing
             noise = self.sample_noise(actions_shape, device)
-
+            total_time = sys_time.perf_counter() - start_time
+            logging.debug(f"Total time for sample noise runs: {total_time:.3f} seconds")
+        start_time = sys_time.perf_counter()
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
         prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
         prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
 
         prefix_att_2d_masks_4d = self._prepare_attention_masks_4d(prefix_att_2d_masks)
+        total_time = sys_time.perf_counter() - start_time
+        logging.debug(f"Total time for prefix_att_2d_masks_4d runs: {total_time:.3f} seconds")
         self.paligemma_with_expert.paligemma.language_model.config._attn_implementation = "eager"  # noqa: SLF001
 
+        start_time = sys_time.perf_counter()
         _, past_key_values = self.paligemma_with_expert.forward(
             attention_mask=prefix_att_2d_masks_4d,
             position_ids=prefix_position_ids,
@@ -769,12 +775,14 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
             inputs_embeds=[prefix_embs, None],
             use_cache=True,
         )
-
+        total_time = sys_time.perf_counter() - start_time
+        logging.debug(f"Total time for forward runs: {total_time:.3f} seconds")
         dt = -1.0 / num_steps
         dt = torch.tensor(dt, dtype=torch.float32, device=device)
 
         x_t = noise
         time = torch.tensor(1.0, dtype=torch.float32, device=device)
+        start_time = sys_time.perf_counter()
         while time >= -dt / 2:
             expanded_time = time.expand(bsize)
             v_t = self.denoise_step(
@@ -785,7 +793,8 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
             )
             x_t = x_t + dt * v_t
             time += dt
-
+        total_time = sys_time.perf_counter() - start_time
+        logging.debug(f"Total time for denoise runs: {total_time:.3f} seconds")
         return x_t
 
     def denoise_step(
