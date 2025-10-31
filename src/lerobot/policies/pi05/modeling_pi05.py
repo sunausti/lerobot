@@ -604,6 +604,7 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
         for img, img_mask in zip(images, img_masks, strict=True):
 
             def image_embed_func(img):
+                logging.debug(f"embed_image device {img.device} dtype {img.dtype}")
                 return self.paligemma_with_expert.embed_image(img)
 
             img_emb = self._apply_checkpoint(image_embed_func, img)
@@ -629,7 +630,7 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
         embs = torch.cat(embs, dim=1)
         pad_masks = torch.cat(pad_masks, dim=1)
         att_masks = torch.tensor(att_masks, dtype=torch.bool, device=pad_masks.device)
-
+        logging.debug(f"embs device {embs.device} pad_masks device {pad_masks.device} att_masks device {att_masks.device}")
         bsize = pad_masks.shape[0]
         att_masks = att_masks[None, :].expand(bsize, len(att_masks))
 
@@ -742,7 +743,8 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
         """Do a full inference forward and compute the action."""
         if num_steps is None:
             num_steps = self.config.num_inference_steps
-
+        device = next(self.parameters()).device
+        logging.debug(f"sample_actions on device: {device}")
         bsize = tokens.shape[0]
         device = tokens.device
         import time as sys_time
@@ -759,9 +761,17 @@ class PI05Pytorch(nn.Module):  # see openpi `PI0Pytorch`
             logging.debug(f"Total time for sample noise runs: {total_time:.3f} seconds")
         start_time = sys_time.perf_counter()
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
+        total_time = sys_time.perf_counter() - start_time
+        logging.debug(f"Total time for embed_prefix runs: {total_time:.3f} seconds")
+        start_time = sys_time.perf_counter()
         prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
+        total_time = sys_time.perf_counter() - start_time
+        logging.debug(f"Total time for make_att_2d_masks runs: {total_time:.3f} seconds")
+        start_time = sys_time.perf_counter()
         prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
-
+        total_time = sys_time.perf_counter() - start_time
+        logging.debug(f"Total time for cumsum runs: {total_time:.3f} seconds")
+        start_time = sys_time.perf_counter()
         prefix_att_2d_masks_4d = self._prepare_attention_masks_4d(prefix_att_2d_masks)
         total_time = sys_time.perf_counter() - start_time
         logging.debug(f"Total time for prefix_att_2d_masks_4d runs: {total_time:.3f} seconds")
@@ -1065,7 +1075,7 @@ class PI05Policy(PreTrainedPolicy):
 
         # Get device from model parameters
         device = next(self.parameters()).device
-
+        logging.debug(f"_preprocess_images on device: {device}")
         present_img_keys = [key for key in self.config.image_features if key in batch]
         missing_img_keys = [key for key in self.config.image_features if key not in batch]
 
