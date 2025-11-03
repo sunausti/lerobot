@@ -30,9 +30,16 @@ Notes:
 - Dataset loading and full training orchestration is handled by Isaac-GR00T
   TrainRunner in their codebase. If you want to invoke that flow end-to-end
   from LeRobot, see `GrootPolicy.finetune_with_groot_runner` below.
+
+Intel GPU (XPU) Support:
+- Device detection and placement (xpu/cuda/cpu)
+- XPU synchronization after inference
+- Eager attention configuration (Flash Attention disabled for XPU)
+- BFloat16 autocast support for XPU
 """
 
 import os
+import sys
 from collections import deque
 
 import torch
@@ -41,6 +48,12 @@ from torch import Tensor
 from lerobot.policies.groot.configuration_groot import GrootConfig
 from lerobot.policies.groot.groot_n1 import GR00TN15
 from lerobot.policies.pretrained import PreTrainedPolicy
+
+# Prevent flash_attn import for Intel GPU compatibility
+# This must be done before any transformers imports
+if os.environ.get("TRANSFORMERS_NO_FLASH_ATTN") == "1":
+    sys.modules['flash_attn'] = None
+    sys.modules['flash_attn_interface'] = None
 
 
 class GrootPolicy(PreTrainedPolicy):
@@ -55,8 +68,15 @@ class GrootPolicy(PreTrainedPolicy):
         config.validate_features()
         self.config = config
 
+        # Configure device
+        self.device = torch.device(config.device)
+        print(f"[GROOT Policy] Using device: {self.device}")
+
         # Initialize GR00T model using ported components
         self._groot_model = self._create_groot_model()
+
+        # Move model to device
+        self.to(self.device)
 
         self.reset()
 
@@ -78,6 +98,7 @@ class GrootPolicy(PreTrainedPolicy):
             tune_visual=self.config.tune_visual,
             tune_projector=self.config.tune_projector,
             tune_diffusion_model=self.config.tune_diffusion_model,
+            device=self.config.device,
         )
 
         model.compute_dtype = "bfloat16" if self.config.use_bf16 else model.compute_dtype
@@ -145,6 +166,10 @@ class GrootPolicy(PreTrainedPolicy):
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=self.config.use_bf16):
             outputs = self._groot_model.get_action(groot_inputs)
 
+        # Synchronize for Intel GPU (XPU) to ensure computation is complete
+        if self.config.use_xpu and hasattr(torch, "xpu"):
+            torch.xpu.synchronize()
+
         actions = outputs.get("action_pred")
 
         original_action_dim = self.config.output_features["action"].shape[0]
@@ -170,7 +195,14 @@ class GrootPolicy(PreTrainedPolicy):
 
         This addresses the common 'undefined symbol' error that occurs when Flash Attention
         is compiled against a different PyTorch version than what's currently installed.
+
+        For Intel GPU (XPU), Flash Attention is not supported and eager attention is used instead.
         """
+        # Disable Flash Attention for Intel GPU (XPU) - not supported
+        if self.config.use_xpu or self.config.use_eager_attention:
+            os.environ["TRANSFORMERS_NO_FLASH_ATTN"] = "1"
+            print("[GROOT] Using eager attention (Flash Attention disabled for Intel GPU/XPU)")
+            return
 
         # Set environment variables to handle Flash Attention compatibility
         # These help with symbol resolution issues

@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -20,6 +22,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 import torch.nn as nn
+
+# Block flash_attn import BEFORE any transformers imports
+# Critical for Intel GPU compatibility
+if os.environ.get("TRANSFORMERS_NO_FLASH_ATTN") == "1" or os.environ.get("DISABLE_FLASH_ATTN") == "1":
+    sys.modules['flash_attn'] = None
+    sys.modules['flash_attn_interface'] = None
+    sys.modules['flash_attn.flash_attn_interface'] = None
 from huggingface_hub import snapshot_download
 from huggingface_hub.errors import HFValidationError, RepositoryNotFoundError
 
@@ -64,14 +73,27 @@ class EagleBackbone(nn.Module):
         eagle_path: str = DEFAULT_VENDOR_EAGLE_PATH,
         tokenizer_assets_repo: str = DEFAULT_TOKENIZER_ASSETS_REPO,
         project_to_dim: int = 1536,
+        device: str | None = None,
     ):
         """
         Args:
             tune_llm: whether to tune the LLM model (default: True)
             tune_visual: whether to tune the visual model (default: False)
+            device: device to load model on (xpu/cuda/cpu), auto-detect if None
         """
         super().__init__()
         assert not reproject_vision, "Reproject vision is not implemented here, set to False"
+
+        # Auto-detect device if not specified
+        if device is None:
+            if hasattr(torch, "xpu") and torch.xpu.is_available():
+                device = "xpu"
+            elif torch.cuda.is_available():
+                device = "cuda"
+            else:
+                device = "cpu"
+        self.device_type = device
+        print(f"[EagleBackbone] Using device: {device}")
 
         # Prefer loading Eagle model config from the cache directory where vendor files were copied.
         vendor_dir = DEFAULT_VENDOR_EAGLE_PATH
@@ -82,7 +104,35 @@ class EagleBackbone(nn.Module):
             print(f"[GROOT] Warning: failed to prepare Eagle cache for backbone: {exc}")
 
         config = AutoConfig.from_pretrained(str(cache_dir), trust_remote_code=True)
+
+        # Configure attention type for XPU (disable Flash Attention)
+        # Must be done BEFORE model instantiation
+        if device == "xpu":
+            # Disable Flash Attention at top level
+            config.use_flash_attention = False
+            config._attn_implementation = "eager"
+
+            # Also disable Flash Attention in vision model config (SigLIP)
+            if hasattr(config, "vision_config") and config.vision_config is not None:
+                config.vision_config.use_flash_attention = False
+                config.vision_config._attn_implementation = "eager"
+                # Force SigLIP to use eager attention (this is the key setting)
+                if hasattr(config.vision_config, "attn_implementation"):
+                    config.vision_config.attn_implementation = "eager"
+
+            # Disable Flash Attention in language model config
+            if hasattr(config, "text_config") and config.text_config is not None:
+                config.text_config.use_flash_attention = False
+                config.text_config._attn_implementation = "eager"
+                if hasattr(config.text_config, "attn_implementation"):
+                    config.text_config.attn_implementation = "eager"
+
+            print("[EagleBackbone] Configured eager attention for Intel GPU (XPU)")
+        # Load model - note: attn_implementation parameter may not be supported by AutoModel.from_config
         self.eagle_model = AutoModel.from_config(config, trust_remote_code=True)
+        # Post-load: Force _attn_implementation in all submodules for XPU
+        if device == "xpu":
+            self._force_eager_attention_in_model()
 
         if project_to_dim is not None:
             self.eagle_linear = torch.nn.Linear(2048, project_to_dim)
@@ -95,6 +145,23 @@ class EagleBackbone(nn.Module):
 
         self.select_layer = select_layer
         self.set_trainable_parameters(tune_llm, tune_visual)
+
+    def _force_eager_attention_in_model(self):
+        """Force eager attention in all submodules for XPU compatibility."""
+        def force_eager_recursive(module, path=""):
+            # Set config._attn_implementation to "eager" if it exists
+            if hasattr(module, 'config') and hasattr(module.config, '_attn_implementation'):
+                old_impl = module.config._attn_implementation
+                module.config._attn_implementation = "eager"
+                if old_impl != "eager":
+                    print(f"[EagleBackbone] Changed {path}.config._attn_implementation: {old_impl} -> eager")
+            # Recursively process children
+            for name, child in module.named_children():
+                child_path = f"{path}.{name}" if path else name
+                force_eager_recursive(child, child_path)
+        print("[EagleBackbone] Forcing eager attention in all submodules...")
+        force_eager_recursive(self.eagle_model, "eagle_model")
+        print("[EagleBackbone] Completed eager attention enforcement")
 
     def set_trainable_parameters(self, tune_llm: bool, tune_visual: bool):
         self.tune_llm = tune_llm
@@ -136,7 +203,8 @@ class EagleBackbone(nn.Module):
         eagle_input = {
             k.removeprefix(eagle_prefix): v for k, v in vl_input.items() if k.startswith(eagle_prefix)
         }
-        del eagle_input["image_sizes"]
+        # Remove image_sizes if present (not needed by eagle_model forward)
+        eagle_input.pop("image_sizes", None)
 
         eagle_output = self.eagle_model(**eagle_input, output_hidden_states=True, return_dict=True)
         eagle_features = eagle_output.hidden_states[self.select_layer]
@@ -206,6 +274,7 @@ class GR00TN15(PreTrainedModel):
         self,
         config: GR00TN15Config,
         local_model_path: str,
+        device: str | None = None,
     ):
         assert isinstance(config.backbone_cfg, dict)
         assert isinstance(config.action_head_cfg, dict)
@@ -213,7 +282,21 @@ class GR00TN15(PreTrainedModel):
         super().__init__(config)
         self.local_model_path = local_model_path
 
-        self.backbone = EagleBackbone(**config.backbone_cfg)
+        # Auto-detect device if not specified
+        if device is None:
+            if hasattr(torch, "xpu") and torch.xpu.is_available():
+                device = "xpu"
+            elif torch.cuda.is_available():
+                device = "cuda"
+            else:
+                device = "cpu"
+        self._device = device
+        print(f"[GR00TN15] Using device: {device}")
+
+        # Pass device to backbone
+        backbone_cfg = config.backbone_cfg.copy()
+        backbone_cfg["device"] = device
+        self.backbone = EagleBackbone(**backbone_cfg)
         action_head_cfg = FlowmatchingActionHeadConfig(**config.action_head_cfg)
         self.action_head = FlowmatchingActionHead(action_head_cfg)
 
@@ -365,8 +448,11 @@ class GR00TN15(PreTrainedModel):
             )
             local_model_path = pretrained_model_name_or_path
 
+        # Extract device from kwargs if provided
+        device = kwargs.pop("device", None)
+
         pretrained_model = super().from_pretrained(
-            local_model_path, local_model_path=local_model_path, **kwargs
+            local_model_path, local_model_path=local_model_path, device=device, **kwargs
         )
 
         pretrained_model.backbone.set_trainable_parameters(tune_visual=tune_visual, tune_llm=tune_llm)
