@@ -75,12 +75,26 @@ class SmolVLMWithExpertModel(nn.Module):
         super().__init__()
         if load_vlm_weights:
             print(f"Loading  {model_id} weights ...")
-            self.vlm = AutoModelForImageTextToText.from_pretrained(
-                model_id,
-                device_map=device,
-                torch_dtype="bfloat16",
-                low_cpu_mem_usage=True,
-            )
+            # Handle XPU device specifically as device_map might not support it fully yet
+            is_xpu = False
+            if isinstance(device, str) and device == "xpu":
+                is_xpu = True
+            elif isinstance(device, torch.device) and device.type == "xpu":
+                is_xpu = True
+
+            if is_xpu:
+                self.vlm = AutoModelForImageTextToText.from_pretrained(
+                    model_id,
+                    torch_dtype="bfloat16",
+                    low_cpu_mem_usage=True,
+                ).to("xpu")
+            else:
+                self.vlm = AutoModelForImageTextToText.from_pretrained(
+                    model_id,
+                    device_map=device,
+                    torch_dtype="bfloat16",
+                    low_cpu_mem_usage=True,
+                )
             config = self.vlm.config
         else:
             config = AutoConfig.from_pretrained(model_id)
@@ -537,7 +551,7 @@ class SmolVLMWithExpertModel(nn.Module):
 
         att_weights = att_weights.to(dtype=torch.float32)
         big_neg = torch.finfo(att_weights.dtype).min  # -2.3819763e38  # See gemma/modules.py
-        masked_att_weights = torch.where(attention_mask[:, None, :, :], att_weights, big_neg)
+        masked_att_weights = torch.where(attention_mask[:, None, :, :].to(torch.bool), att_weights, big_neg)
         probs = nn.functional.softmax(masked_att_weights, dim=-1)
         probs = probs.to(dtype=value_states.dtype)
 
